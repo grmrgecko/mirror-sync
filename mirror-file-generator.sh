@@ -11,7 +11,7 @@ PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:$HOME/.local/
 # Variables about this program.
 PROGRAM="mirror-file-generator"
 VERSION="20240219"
-PIDFILE="/tmp/$PROGRAM.pid"
+PIDFILE="/var/run/$PROGRAM.pid"
 LOGFILE="/var/log/mirror-sync/$PROGRAM.log"
 
 # Default variables
@@ -114,9 +114,12 @@ image_copy() {
         if [[ "$file" =~ ^http(s|)\:\/\/ ]]; then
             
             # If failure, and is not the default image, attempt to grab the default file.
-            if ! http_code=$(curl -s --write-out "%{http_code}" -o "$save_path" "$file") \
+            # --fail suppresses writing the response body on HTTP errors; rm -f cleans up
+            # any partial file so the fallback recursion isn't blocked by the [[ ! -e ]] guard.
+            if ! http_code=$(curl -sf --write-out "%{http_code}" -o "$save_path" "$file") \
                 || ( ((http_code!=200)) && [[ "$file" != "$icons_default_img" ]] \
                 && [[ "$file" != "$icons_default_source/$icons_default_img" ]] ); then
+                rm -f "$save_path"
                 image_copy "$icons_default_img" "$file_name"
                 return
             fi
@@ -409,13 +412,29 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
             for MODULE in ${CUSTOM_MODULES:?}; do
                 # Get the repo with trailing slash removed.
                 eval repo="\${${MODULE}_repo%/}"
-                
+
                 # Confirm if this custom module is this repo, and parse configs if it is.
                 if [[ "${repo:?}" == "$real_dir" ]]; then
                     log "Found custom configurations"
                     read_config
+                    # Stage/prod tiers populated by mirror-promote.sh land here,
+                    # so timestamp/dusum are read below for both MODULES and CUSTOM_MODULES.
+                    break
                 fi
             done
+
+            # Read the per-tier timestamp/dusum sidecars that mirror-promote.sh
+            # copies for promoted CUSTOM_MODULES (e.g. stage_almalinux, prod_*).
+            if [[ -n ${timestamp:-} ]] && [[ -f $timestamp ]]; then
+                repo_sync_time=$(date -d "@$(cat "$timestamp")" '+%c')
+            fi
+            if [[ -n ${dusum:-} ]] && [[ -f $dusum ]] && ((${repo_skip:-0} == 0)); then
+                repo_size_kb=$(grep "$real_dir" "$dusum" | awk '{print $1}')
+                if [[ -n $repo_size_kb ]]; then
+                    totalKBytes=$((totalKBytes+repo_size_kb))
+                    repo_size=$(echo "$repo_size_kb*1024" | bc | numfmt --to=iec)
+                fi
+            fi
         fi
 
         # If we should skip this repo, continue to the next.
@@ -426,13 +445,21 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
                     icon repo_skip disable_size_calc timestamp_file_stat
             continue
         fi
-        
+
         # If a timstamp file stat is configured and the path exists, get the timestamp via stat.
         if [[ -e ${timestamp_file_stat:-} ]]; then
             # Get all timestamps, sort, and get the latest entry.
             latest_unix_stat=$(stat --format='%W %X %Y %Z' "$timestamp_file_stat" | tr ' ' '\n' | sort -nr | head -n1)
             # Format the timestamp.
             repo_sync_time=$(date -d "@$latest_unix_stat" '+%c')
+        fi
+
+        # Fallback to the .last-synced sidecar mtime that mirror-promote.sh writes
+        # into each promoted repo. Lets stage/prod proxy-cache repos render a
+        # meaningful date even when no other timestamp source is configured.
+        if [[ -z ${repo_sync_time:-} ]] && [[ -f "$real_dir/.last-synced" ]]; then
+            last_synced_unix=$(stat --format='%Y' "$real_dir/.last-synced")
+            repo_sync_time=$(date -d "@$last_synced_unix" '+%c')
         fi
 
         # HTML encode and export variables for subsitution.
