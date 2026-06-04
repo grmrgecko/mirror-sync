@@ -5,7 +5,7 @@ PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:$HOME/.local/
 
 # Variables for trace generation.
 PROGRAM="mirror-sync"
-VERSION="20240219"
+VERSION="20260602"
 TRACEHOST=$(hostname -f)
 mirror_hostname=$(hostname -f)
 DATE_STARTED=$(LC_ALL=POSIX LANG=POSIX date -u -R)
@@ -122,7 +122,7 @@ quick_fedora_mirror_install() {
                 exit 1
             fi
         fi
-    )
+    ) || return 1
 }
 
 # Installs jigdo image tool.
@@ -180,7 +180,7 @@ EOF
                 fi
             fi
             make install
-        )
+        ) || return 1
     fi
 }
 
@@ -211,7 +211,10 @@ s5cmd_install() {
         fi
 
         # Extract and check that s5cmd extracted correctly.
-        tar -xf s5cmd.tar.gz
+        if ! tar -xf s5cmd.tar.gz; then
+            echo "Unable to extract s5cmd."
+            exit 1
+        fi
         if ! [[ -f s5cmd ]]; then
             echo "Unable to extract s5cmd."
             exit 1
@@ -242,11 +245,11 @@ jigdo_hook() {
     currentVersion="${currentVersion##* -> }"
     versionDir="$(realpath "$repo")/${currentVersion}"
 
-    # For each archetecture, run jigdo to build iso files.
+    # For each architecture, run jigdo to build iso files.
     for a in "$versionDir"/*/; do
         arch=$(basename "$a")
 
-        # Determine what releases are needed for this archetecture.
+        # Determine what releases are needed for this architecture.
         sets=$(cat "${repo}/project/build/${currentVersion}/${arch}")
 
         # For each set, build iso files.
@@ -299,7 +302,7 @@ build_trace_content() {
     echo "Date: ${rfc822date}"
     echo "Date-Started: ${DATE_STARTED}"
 
-    if [[ -e $TRACEFILE_MASTER ]]; then
+    if [[ -e $TRACE_MASTER_FILE ]]; then
         echo "Archive serial: $(extract_trace_field 'Archive serial' "$TRACE_MASTER_FILE" || echo unknown )"
     fi
 
@@ -326,7 +329,7 @@ build_trace_content() {
         echo "Trigger: ${INFO_TRIGGER}"
     fi
 
-    # Depending on repo type, find archetectures supported.
+    # Depending on repo type, find architectures supported.
     ARCH_REGEX='(source|SRPMS|amd64|mips64el|mipsel|i386|x86_64|aarch64|ppc64le|ppc64el|s390x|armhf)'
     if [[ $repo_type == "deb" ]]; then
         ARCH=$(find "${repo}/dists" \( -name 'Packages.*' -o -name 'Sources.*' \) 2>/dev/null |
@@ -364,18 +367,21 @@ build_trace_content() {
             total=$(( total + bytes ))
         done
     elif [[ -f $LOGFILE_STAGE1 ]]; then
-        bytes=$(sed -Ene 's/(^|.* )sent ([0-9]+) bytes  received ([0-9]+) bytes.*/\3/p' "$LOGFILE_STAGE1")
-        total=$(( total + bytes ))
+        for bytes in $(sed -Ene 's/(^|.* )sent ([0-9]+) bytes  received ([0-9]+) bytes.*/\3/p' "$LOGFILE_STAGE1"); do
+            total=$(( total + bytes ))
+        done
     fi
     if [[ -f $LOGFILE_STAGE2 ]]; then
-        bytes=$(sed -Ene 's/(^|.* )sent ([0-9]+) bytes  received ([0-9]+) bytes.*/\3/p' "$LOGFILE_STAGE2")
-        total=$(( total + bytes ))
+        for bytes in $(sed -Ene 's/(^|.* )sent ([0-9]+) bytes  received ([0-9]+) bytes.*/\3/p' "$LOGFILE_STAGE2"); do
+            total=$(( total + bytes ))
+        done
     fi
     if (( total > 0 )); then
         echo "Total bytes received in rsync: ${total}"
     fi
 
     # Calculate time per rsync stage and print both stages if both were started.
+    total_time=0
     if [[ $sync_started ]]; then
         STATS_TOTAL_RSYNC_TIME1=$(( sync_ended - sync_started  ))
         total_time=$STATS_TOTAL_RSYNC_TIME1
@@ -444,6 +450,7 @@ acquire_lock() {
     fi
 
     # Redirect stdout to both stdout and log file.
+    mkdir -p "$LOGPATH"
     exec 1> >(tee -a "$LOGFILE")
     # Redirect errors to stdout so they also are logged.
     exec 2>&1
@@ -465,7 +472,7 @@ acquire_lock() {
     fi
 
     # Create a new pid file for this process.
-    echo $BASHPID >"$PIDFILE"
+    echo "$BASHPID" >"$PIDFILE"
 
     # On exit, remove pid file.
     trap 'rm -f "$PIDFILE"' EXIT
@@ -493,15 +500,15 @@ rebuild_dusum_totals() {
         {
             date
             totalKBytes=0
-            for MODULE in ${MODULES:?}; do
-                eval dusum="\${${MODULE}_dusum:-}"
-                if [[ -n $dusum ]] && [[ -f $dusum ]]; then
+            for _DUSUM_MODULE in ${MODULES:?}; do
+                eval _dusum="\${${_DUSUM_MODULE}_dusum:-}"
+                if [[ -n $_dusum ]] && [[ -f $_dusum ]]; then
                     while read -r size path; do
                         if [[ -n $size ]]; then
                             totalKBytes=$((totalKBytes+size))
                             printf "%-12s %s\n" "$size" "$path"
                         fi
-                    done < "$dusum"
+                    done < "$_dusum"
                 fi
             done
             printf "%-12s %s\n" "$totalKBytes" "total"
@@ -513,15 +520,15 @@ rebuild_dusum_totals() {
         {
             date
             totalKBytes=0
-            for MODULE in ${MODULES:?}; do
-                eval dusum="\${${MODULE}_dusum:-}"
-                if [[ -n $dusum ]] && [[ -f $dusum ]]; then
+            for _DUSUM_MODULE in ${MODULES:?}; do
+                eval _dusum="\${${_DUSUM_MODULE}_dusum:-}"
+                if [[ -n $_dusum ]] && [[ -f $_dusum ]]; then
                     while read -r size path; do
                         if [[ -n $size ]]; then
                             totalKBytes=$((totalKBytes+size))
                             printf "%-5s %s\n" "$(echo "$size*1024" | bc | numfmt --to=iec)" "$path"
                         fi
-                    done < "$dusum"
+                    done < "$_dusum"
                 fi
             done
             printf "%-5s %s\n" "$(echo "$totalKBytes*1024" | bc | numfmt --to=iec)" "total"
@@ -577,7 +584,7 @@ post_failed_sync() {
         # Remove the error count file so that the count resets.
         rm -f "$ERRORFILE"
 
-        # Exit not to not save the updated count.
+        # Exit to not save the updated count.
         exit 1
     fi
 
@@ -610,20 +617,18 @@ git_sync() {
     # Start the module.
     module_config "$1"
 
-    (
-        # Do a git pull within the repo folder to sync.
-        if ! cd "${repo:?}"; then
-            echo "Failed to access '${repo:?}' git repository."
-            exit 1
-        fi
-        eval git pull "$options"
-        RT=${PIPESTATUS[0]}
-        if (( RT == 0 )); then
-            post_successful_sync
-        else
-            post_failed_sync
-        fi
-    )
+    # Do a git pull within the repo folder to sync.
+    if ! cd "${repo:?}"; then
+        echo "Failed to access '${repo:?}' git repository."
+        exit 1
+    fi
+    eval git pull ${options:+$options}
+    RT=$?
+    if (( RT == 0 )); then
+        post_successful_sync
+    else
+        post_failed_sync
+    fi
 
     log_end_header
 }
@@ -708,7 +713,7 @@ s5cmd_sync() {
 
     # Run AWS client to sync the S3 bucket.
     eval "$sync_timeout" "$S5CMD_BIN" "$options" \
-        sync "${sync_options:-}" \
+        sync ${sync_options:+$sync_options} \
         --no-follow-symlinks \
         --delete \
         "'${bucket:?}'" "'${repo:?}'"
@@ -751,6 +756,7 @@ wget_sync() {
     fi
 
     (
+        trap - EXIT
         # Make sure the repo directory exists and we are in it.
         if ! [[ -e $repo ]]; then
             mkdir -p "$repo"
@@ -758,6 +764,7 @@ wget_sync() {
 
         if ! cd "$repo"; then
             echo "Unable to enter repo directory."
+            exit 1
         fi
 
         # Run wget with configured options.
@@ -769,6 +776,10 @@ wget_sync() {
             post_failed_sync
         fi
     )
+    RT=$?
+    if (( RT != 0 )); then
+        exit "$RT"
+    fi
 
     log_end_header
 }
@@ -823,20 +834,31 @@ rsync_sync() {
     #  when we detect its needed or when last rsync was a long time ago.
     if [[ $upstream_check ]] && (( force == 0 )); then
         now=$(date +%s)
-        last_timestamp=$(cat "${timestamp:?}")
+        if [[ ! -f ${timestamp:?} ]]; then
+            echo "Timestamp file not found, skipping upstream check."
+        else
+            last_timestamp=$(cat "$timestamp")
 
-        # If last update was not that long ago, we should check if upstream was updated recently.
-        if (( now-last_timestamp < ${upstream_timestamp_min:?} )); then
-            echo "Checking upstream's last modified."
+            # If last update was not that long ago, we should check if upstream was updated recently.
+            if (( now-last_timestamp < ${upstream_timestamp_min:?} )); then
+                echo "Checking upstream's last modified."
 
-            # Get the last modified date.
-            IFS=': ' read -r _ last_modified < <(curl -sI HEAD "${upstream_check:?}" | grep Last-Modified)
-            last_modified_unix=$(date -u +%s -d "$last_modified")
+                # Get the last modified date.
+                IFS=': ' read -r _ last_modified < <(curl -sI "${upstream_check:?}" | grep -i Last-Modified)
+                last_modified="${last_modified//$'\r'/}"
 
-            # If last modified is greater than our max age, it wasn't modified recently and we should not rsync.
-            if (( now-last_modified_unix > ${upstream_max_age:-0} )); then
-                echo "Skipping sync as upstream wasn't updated recently."
-                exit 88
+                # If last modified couldn't be determined, proceed with sync.
+                if [[ -z $last_modified ]]; then
+                    echo "Could not determine upstream last-modified, proceeding with sync."
+                else
+                    last_modified_unix=$(date -u +%s -d "$last_modified")
+
+                    # If last modified is greater than our max age, it wasn't modified recently and we should not rsync.
+                    if (( now-last_modified_unix > ${upstream_max_age:-0} )); then
+                        echo "Skipping sync as upstream wasn't updated recently."
+                        exit 88
+                    fi
+                fi
             fi
         fi
     fi
@@ -844,19 +866,26 @@ rsync_sync() {
     # If a time file check was defined, and check if needed.
     if [[ ${time_file_check:-} ]] && (( force == 0 )); then
         now=$(date +%s)
-        last_timestamp=$(cat "${timestamp:?}")
+        if [[ ! -f ${timestamp:?} ]]; then
+            echo "Timestamp file not found, skipping time file check."
+        else
+            last_timestamp=$(cat "$timestamp")
 
-        # Only check time file if the timestamp was recently updated.
-        if (( now-last_timestamp < ${upstream_timestamp_min:?} )); then
-            echo "Checking if time file has changed since last sync."
-            checkresult=$($sync_timeout rsync \
-                --no-motd \
-                --dry-run \
-                --out-format="%n" \
-                "${source:?}/${time_file_check:?}" "${repo:?}/${time_file_check:?}")
-            if [[ -z $checkresult ]]; then
-                echo "The time file has not changed since last sync, we are not updating at this time."
-                exit 88
+            # Only check time file if the timestamp was recently updated.
+            if (( now-last_timestamp < ${upstream_timestamp_min:?} )); then
+                echo "Checking if time file has changed since last sync."
+                checkresult=$($sync_timeout rsync \
+                    --no-motd \
+                    --dry-run \
+                    --out-format="%n" \
+                    "${source:?}/${time_file_check:?}" "${repo:?}/${time_file_check:?}")
+                rsync_rt=$?
+                if (( rsync_rt != 0 )); then
+                    echo "time_file_check rsync failed (exit ${rsync_rt}), proceeding with sync."
+                elif [[ -z $checkresult ]]; then
+                    echo "The time file has not changed since last sync, we are not updating at this time."
+                    exit 88
+                fi
             fi
         fi
     fi
@@ -882,13 +911,10 @@ rsync_sync() {
     touch "$mirror_update_file"
     LOGFILE_STAGE1="${LOGFILE}.stage1"
     echo -n > "$LOGFILE_STAGE1"
-    LOGFILE_STAGE2="${LOGFILE}.stage2"
-    echo -n > "$LOGFILE_STAGE2"
 
     # Run the rsync. Using eval here so extra_args expands and is used as arguments.
     stage1_started=$(date +%s)
     eval "$sync_timeout" rsync -avH  \
-            --human-readable    \
             --progress          \
             --safe-links        \
             --delay-updates     \
@@ -900,11 +926,11 @@ rsync_sync() {
             --exclude "Archive-Update-in-Progress-${mirror_hostname:?}" \
             --exclude "project/trace/${mirror_hostname:?}" \
             "'${source:?}'" "'${repo:?}'" | tee -a "$LOGFILE_STAGE1"
-    RT=${PIPESTATUS[0]}
     stage1_ended=$(date +%s)
 
     # Check if run was successful.
     if [[ $(grep -c '^total size is' "$LOGFILE_STAGE1") -ne 1 ]]; then
+        rm -f "$mirror_update_file"
         post_failed_sync
     fi
 
@@ -939,6 +965,8 @@ rsync_sync() {
 
         # Add stage 2 options from configurations.
         extra_args="${options_stage2:-}"
+        LOGFILE_STAGE2="${LOGFILE}.stage2"
+        echo -n > "$LOGFILE_STAGE2"
 
         echo
         echo "Running rsync stage 2:"
@@ -946,7 +974,6 @@ rsync_sync() {
         # Run the rsync. Using eval here so extra_args expands and is used as arguments.
         stage2_started=$(date +%s)
         eval "$sync_timeout" rsync -avH  \
-                --human-readable    \
                 --progress          \
                 --safe-links        \
                 --delete            \
@@ -960,11 +987,11 @@ rsync_sync() {
                 --exclude "Archive-Update-in-Progress-${mirror_hostname:?}" \
                 --exclude "project/trace/${mirror_hostname:?}" \
                 "'${source:?}'" "'${repo:?}'" | tee -a "$LOGFILE_STAGE2"
-        RT=${PIPESTATUS[0]}
         stage2_ended=$(date +%s)
 
         # Check if run was successful.
         if [[ $(grep -c '^total size is' "$LOGFILE_STAGE2") -ne 1 ]]; then
+            rm -f "$mirror_update_file"
             post_failed_sync
         fi
     fi
@@ -983,7 +1010,7 @@ rsync_sync() {
         save_trace_file
     fi
     rm -f "$LOGFILE_STAGE1"
-    rm -f "$LOGFILE_STAGE2"
+    [[ -n ${LOGFILE_STAGE2:-} ]] && rm -f "$LOGFILE_STAGE2"
 
     # Remove archive update file.
     rm -f "$mirror_update_file"
@@ -1033,13 +1060,6 @@ quick_fedora_mirror_sync() {
     eval filterexp="\$${MODULE}_filterexp"
     eval rsync_options="\$${MODULE}_rsync_options"
 
-    # If configuration is not set, exit.
-    if [[ ! $repo ]]; then
-        echo "No configuration exists for ${MODULE}"
-        exit 1
-    fi
-    log_start_header
-
     # Install QFM if not already installed.
     quick_fedora_mirror_install
 
@@ -1088,11 +1108,13 @@ EOF
     eval "$sync_timeout" "$QFM_BIN" \
             -c "'$conf_path'"           \
             "$extra_args" | tee -a "$LOGFILE_SYNC"
-    RT=${PIPESTATUS[0]}
     sync_ended=$(date +%s)
 
     # Check if run was successful.
-    if [[ $(grep -c '^total size is' "$LOGFILE_SYNC") -lt 1 ]]; then
+    if ! grep -q '^total size is' "$LOGFILE_SYNC"; then
+        for module in $modules; do
+            rm -f "$docroot$(module_dir "$module")/Archive-Update-in-Progress-${mirror_hostname:?}"
+        done
         post_failed_sync
     fi
 

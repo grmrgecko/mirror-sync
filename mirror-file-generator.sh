@@ -10,8 +10,9 @@ PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:$HOME/.local/
 
 # Variables about this program.
 PROGRAM="mirror-file-generator"
-VERSION="20240219"
-PIDFILE="/var/run/$PROGRAM.pid"
+VERSION="20260602"
+PIDPATH="/tmp"
+PIDFILE="${PIDPATH}/${PROGRAM}.pid"
 LOGFILE="/var/log/mirror-sync/$PROGRAM.log"
 
 # Default variables
@@ -24,9 +25,12 @@ footer_generate=1
 footer_file_name="footer.txt"
 dir_sizes_generate=1
 dir_sizes_file_name="DIRECTORY_SIZES.TXT"
-dir_sizes_unknown_path="/home/mirror/dusum/unknown_dirs"
+dir_sizes_unknown_path="$HOME/dusum/unknown_dirs"
 dir_sizes_human_readable=1
 icons_dir_name="img"
+icons_local_repo="$HOME/dashboard-icons"
+icons_repo_url="https://github.com/walkxcode/dashboard-icons.git"
+icons_repo_refresh=604800
 icons_default_source="https://raw.githubusercontent.com/walkxcode/dashboard-icons/main/png"
 icons_default_img="tux.png"
 
@@ -108,14 +112,28 @@ image_copy() {
     local save_path="$path/$icons_dir_name/$file_name.$extension"
     local http_code
 
-    # If the file isn't already saved, attempt to grab it.
+    # Determine if the saved file needs to be updated.
+    local needs_update=0
     if [[ ! -e "$save_path" ]]; then
+        needs_update=1
+    elif [[ "$file" =~ ^http(s|)\:\/\/ ]]; then
+        # Re-download remote files if older than the refresh interval.
+        if (( $(date +%s) - $(stat --format='%Y' "$save_path") > icons_repo_refresh )); then
+            needs_update=1
+        fi
+    elif [[ -f $file ]]; then
+        # Re-copy local files if the source mtime differs.
+        if (( $(stat --format='%Y' "$file") != $(stat --format='%Y' "$save_path") )); then
+            needs_update=1
+        fi
+    fi
+
+    if (( needs_update )); then
         # If http, use curl to grab the image.
         if [[ "$file" =~ ^http(s|)\:\/\/ ]]; then
-            
             # If failure, and is not the default image, attempt to grab the default file.
             # --fail suppresses writing the response body on HTTP errors; rm -f cleans up
-            # any partial file so the fallback recursion isn't blocked by the [[ ! -e ]] guard.
+            # any partial file so the fallback recursion isn't blocked by the needs_update check.
             if ! http_code=$(curl -sf --write-out "%{http_code}" -o "$save_path" "$file") \
                 || ( ((http_code!=200)) && [[ "$file" != "$icons_default_img" ]] \
                 && [[ "$file" != "$icons_default_source/$icons_default_img" ]] ); then
@@ -123,17 +141,17 @@ image_copy() {
                 image_copy "$icons_default_img" "$file_name"
                 return
             fi
-        # If the file exists, copy it.
+        # If the file exists, copy it preserving mtime.
         elif [[ -f $file ]]; then
-            cp "$file" "$save_path"
+            cp -p "$file" "$save_path"
         else
             # Check to see if a template file exists with the file name.
             local t_file
             t_file=$(template_file "$file")
-            # If the file exists, copy it.
+            # If the file exists, copy it preserving mtime.
             if [[ -f $t_file ]]; then
-                cp "$t_file" "$save_path"
-            elif [[ "$file" != "$icons_default_source/$file" ]]; then
+                cp -p "$t_file" "$save_path"
+            elif [[ "$file" != /* ]] && [[ "$file" != "$icons_default_source/$file" ]]; then
                 # If nothing else exists, try grabbing from the default source.
                 image_copy "$icons_default_source/$file" "$file_name"
                 return
@@ -199,7 +217,7 @@ while (( $# > 0 )); do
 
             # If the mirror wasn't found, quit.
             if [[ -z $foundMirror ]]; then
-                echo "Unknown mirror '$1'"
+                echo "Unknown mirror '$mirror'"
                 echo
                 print_help "$@"
             fi
@@ -230,13 +248,13 @@ if [[ -f $PIDFILE ]]; then
 
     # Check if PID is active.
     if ps -p "$PID" >/dev/null; then
-        log "A sync is already in progress for ${MODULE} with pid ${PID}."
+        log "A sync is already in progress (pid ${PID})."
         exit 1
     fi
 fi
 
 # Create a new pid file for this process.
-echo $BASHPID >"$PIDFILE"
+echo "$BASHPID" >"$PIDFILE"
 
 # On exit, remove pid file.
 trap 'rm -f "$PIDFILE"' EXIT
@@ -257,6 +275,28 @@ if (( ${#selected_mirrors[@]} == 0 )); then
             selected_mirrors+=("$MIRROR")
         fi
     done
+fi
+
+# Ensure the local dashboard-icons repo is present and fresh (pulled at most weekly).
+if [[ -n $icons_local_repo ]]; then
+    if [[ -n $icons_repo_url ]] && [[ ! -d "$icons_local_repo/.git" ]]; then
+        log "Cloning dashboard-icons to $icons_local_repo"
+        git clone --depth=1 "$icons_repo_url" "$icons_local_repo" \
+            || log "Warning: failed to clone dashboard-icons, falling back to remote URLs"
+    elif [[ -n $icons_repo_url ]] && [[ -d "$icons_local_repo/.git" ]]; then
+        fetch_head="$icons_local_repo/.git/FETCH_HEAD"
+        if [[ ! -f "$fetch_head" ]] \
+            || (( $(date +%s) - $(stat --format='%Y' "$fetch_head") > icons_repo_refresh )); then
+            log "Updating dashboard-icons at $icons_local_repo"
+            git -C "$icons_local_repo" pull --ff-only \
+                || log "Warning: failed to update dashboard-icons"
+        fi
+    fi
+
+    # Prefer the local clone over the remote URL.
+    if [[ -d "$icons_local_repo/png" ]]; then
+        icons_default_source="$icons_local_repo/png"
+    fi
 fi
 
 # Keep track of repos which sizes were updated for to
@@ -347,7 +387,7 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
             eval sync_method="\${${MODULE}_sync_method:-rsync}"
 
             # If is this module.
-            if [[ "${repo:?}" == "$real_dir" ]]; then
+            if [[ -n $repo ]] && [[ "$repo" == "$real_dir" ]]; then
                 found_repo=1
             # If QFM module, we need to determine sub path using QFM logic.
             elif [[ "${sync_method:?}" == "qfm" ]]; then
@@ -391,13 +431,13 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
                 read_config
 
                 # If a timestamp file exists, grab and format the date.
-                if [[ -f ${timestamp:?} ]]; then
-                    repo_sync_time=$(date -d "@$(cat "${timestamp:?}")" '+%c')
+                if [[ -n $timestamp ]] && [[ -f $timestamp ]]; then
+                    repo_sync_time=$(date -d "@$(cat "$timestamp")" '+%c')
                 fi
 
                 # If a directory usage summary exists and we're not skipping, parse the size.
-                if [[ -f ${dusum:?} ]] && ((${repo_skip:-0} == 0)); then
-                    repo_size_kb=$(grep "$real_dir" "${dusum:?}" | awk '{print $1}')
+                if [[ -n $dusum ]] && [[ -f $dusum ]] && ((${repo_skip:-0} == 0)); then
+                    repo_size_kb=$(grep "$real_dir" "$dusum" | awk '{print $1}')
                     if [[ -n $repo_size_kb ]]; then
                         totalKBytes=$((totalKBytes+repo_size_kb))
                         repo_size=$(echo "$repo_size_kb*1024" | bc | numfmt --to=iec)
@@ -409,12 +449,12 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
 
         if ((found_repo == 0)); then
             # To allow customization of non synced modules, check each module.
-            for MODULE in ${CUSTOM_MODULES:?}; do
+            for MODULE in ${CUSTOM_MODULES:-}; do
                 # Get the repo with trailing slash removed.
                 eval repo="\${${MODULE}_repo%/}"
 
                 # Confirm if this custom module is this repo, and parse configs if it is.
-                if [[ "${repo:?}" == "$real_dir" ]]; then
+                if [[ -n $repo ]] && [[ "$repo" == "$real_dir" ]]; then
                     log "Found custom configurations"
                     read_config
                     # Stage/prod tiers populated by mirror-promote.sh land here,
@@ -527,7 +567,7 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
             if ((dir_sizes_human_readable)); then
                 printf "%-5s %s\n" "$repo_size" "$dir_name" >> "$dir_sizes_file_path"
             else
-                printf "%-12s %s\n" "$repo_size_kb" "$dir_name" >> "$dir_sizes_file_path"
+                printf "%-12s %s\n" "${repo_size_kb:-0}" "$dir_name" >> "$dir_sizes_file_path"
             fi
         fi
 
@@ -539,7 +579,7 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
 
     # If the index should be generated, add each section and footer.
     if ((index_generate)); then
-        # Add all sections and remove teh temp file.
+        # Add all sections and remove the temp file.
         for SECTION in $SECTIONS; do
             cat "$index_file_temp.$SECTION" >> "$index_file_temp"
             rm -f "$index_file_temp.$SECTION"
@@ -552,6 +592,8 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
         if grep -q "Last Sync:" "$index_file_temp"; then
             [[ -f $index_file_path ]] && rm -f "$index_file_path"
             mv "$index_file_temp" "$index_file_path"
+        else
+            rm -f "$index_file_temp"
         fi
     fi
 
@@ -564,7 +606,7 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
         fi
     fi
 
-    # If we should generate the gloabl footer, do so.
+    # If we should generate the global footer, do so.
     if ((footer_generate)); then
         log "Generating footer for $mirror at $path/$footer_file_name"
         envsubst < "$(template_file footer.txt)" > "$path/$footer_file_name"

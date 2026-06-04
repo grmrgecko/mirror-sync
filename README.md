@@ -1,5 +1,5 @@
 # mirror-sync
-A tool to mirror repostories for Linux and other similar tools. This tool is designed to help follow upstream mirror instructions, and implement the features they expect from a downstream official mirror. It also includes features to help keep you in the loop in case of situations that need manual intervention.
+A tool to mirror repositories for Linux and other similar tools. This tool is designed to help follow upstream mirror instructions, and implement the features they expect from a downstream official mirror. It also includes features to help keep you in the loop in case of situations that need manual intervention.
 
 ## Configuration
 It is suggested that you mirror using a sub user account, this tool prevents execution as root to protect you. Once you have an user account dedicated to mirror activities, you can make the log directory, configure logrotate, and add a configuration file to define configurations.
@@ -29,7 +29,7 @@ The configuration file is in `/etc/mirror-sync.conf` and is formatted in bash.
 
 ## Main configurations
 ### MODULES
-The available modules separated by space. Each module is a separate repostory to sync, and this list allows the script to know how to find their configs.
+The available modules separated by space. Each module is a separate repository to sync, and this list allows the script to know how to find their configs.
 
 ### TRACEHOST
 The hostname to show in trace project files, it defaults to the FQDN hostname of the server.
@@ -47,7 +47,7 @@ If you wish to override where logs are stored, the default is `/var/log/mirror-s
 Timeout before a sync is cancelled, defaults to `timeout 1d` which should work for most mirrors.
 
 ### max_errors
-How many errors before an email is sent regarding the issue. This allows you to ignore anomolies.
+How many errors before an email is sent regarding the issue. This allows you to ignore anomalies.
 
 ### upstream_max_age
 If the upstream last modified date is older than the defined number of seconds, the upstream check will skip syncing. Default is 5 hours.
@@ -98,7 +98,7 @@ How did the sync occur, cron job or manually via ssh? This is auto detected and 
 Path to save a grand total of each disk usage sum in human readable form.
 
 ### dusum_kbytes_total_file
-Path to save a grand total of each disk usage sum in killo bytes.
+Path to save a grand total of each disk usage sum in kilobytes.
 
 ## Module specific configurations
 Each module is configured via configurations prefixed by the module name. The one configuration used by all modules is the `_sync_method` configuration which defines what sync method to use. Each sync method has different configurations available. The default sync method is rsync.
@@ -114,7 +114,7 @@ Each repo has at bare minimum the following configurations:
 Synchronizes a git repository via git pull. To use this method, you need to have the git package installed.
 
 #### options
-Extra options appended to `get pull`.
+Extra options appended to `git pull`.
 
 #### Example
 ```bash
@@ -132,7 +132,7 @@ The bucket URL to sync with.
 #### aws_access_key
 The access key for the s3 bucket.
 
-### aws_secret_key
+#### aws_secret_key
 The secret for the s3 bucket.
 
 #### aws_endpoint_url
@@ -160,14 +160,14 @@ The bucket URL to sync with.
 #### aws_access_key
 The access key for the s3 bucket.
 
-### aws_secret_key
+#### aws_secret_key
 The secret for the s3 bucket.
 
 #### aws_endpoint_url
 If you are using a third party S3 compatible service, you can enter their endpoint URL here in format of HOSTNAME:PORT.
 
 #### options
-Extra options to append to `s5cmd`.
+Extra options to append to `s3cmd`.
 
 #### Example
 ```bash
@@ -199,7 +199,7 @@ The bucket URL to sync with. You must end the bucket url with `*` for s5cmd to w
 #### aws_access_key
 The access key for the s3 bucket.
 
-### aws_secret_key
+#### aws_secret_key
 The secret for the s3 bucket.
 
 #### aws_endpoint_url
@@ -275,9 +275,9 @@ If your repo needs a 2 stage rsync, define some options here. The most basic opt
 A hook to run prior to the second stage sync.
 
 #### upstream_check
-An http URL to check the last modified date as a reference for if the upstream mirror was possibly modified recently. This option is mainly here to lower the impact on upstream mirrors so that mirrorning happens less often. See `upstream_timestamp_min` and `upstream_max_age` for global configuration options of this check.
+An http URL to check the last modified date as a reference for if the upstream mirror was possibly modified recently. This option is mainly here to lower the impact on upstream mirrors so that mirroring happens less often. See `upstream_timestamp_min` and `upstream_max_age` for global configuration options of this check.
 
-### time_file_check
+#### time_file_check
 Name of a time file to check if the upstream has updated before syncing all files to reduce load on upstream mirrors.
 
 #### report_mirror
@@ -334,7 +334,7 @@ example_type="iso"
 ### qfm
 Quick Fedora Mirror is a tool to help Fedora mirrors distribute changes faster and save on resources when trying to discover what needs to be synced. To use this method, you must have both the rsync and zsh package installed. This tool automatically downloads QFM if you do not already have it installed.
 
-This tool requires that the upstream mirror has an module with sub modules designed for use with quick-fedora-mirror. You can use this tool with non-fedora mirrors, however they must follow the fedora module configurations. For fedora mirrors, you can utilize [tier 1 mirrors](https://fedoraproject.org/wiki/Infrastructure/Mirroring/Tiering#Tier_1_mirrors).
+This tool requires that the upstream mirror has a module with sub modules designed for use with quick-fedora-mirror. You can use this tool with non-fedora mirrors, however they must follow the fedora module configurations. For fedora mirrors, you can utilize [tier 1 mirrors](https://fedoraproject.org/wiki/Infrastructure/Mirroring/Tiering#Tier_1_mirrors).
 
 You can list modules available on an rsync server with:
 ```bash
@@ -405,7 +405,7 @@ example_type=rpm
 ## CLI Options
 There are not that many cli options available, usage is as follows:
 ```
-[--help|--update-support-utilities] {module} [--force]
+[--help|--update-support-utilities|--version] {module} [--force]
 ```
 
 ## Requirements list
@@ -449,7 +449,7 @@ This tool utilizes the same config file as mirror-sync, and shares the following
 * timestamp - Used for sync time.
 * dusum - Used for disk usage summary.
 
-The tool also adds the following repo 
+The tool also adds the following repo-specific configurations:
 
 ### section
 What section to associate the repo with.
@@ -460,7 +460,7 @@ A title for the repo to show instead of the directory name.
 ### repo_icon
 The repo icon, will default to tux if not defined. The icon can be defined as an http(s) link, file path, a file stored in the template directory, or png image name from [Dashboard Icons](https://github.com/walkxcode/dashboard-icons/tree/main/png). The script will automatically make a copy or download the icon to the image folder.
 
-### repo_descriotion
+### repo_description
 A description to show at the bottom of the repo card.
 
 ### repo_skip
@@ -476,6 +476,8 @@ If you do not have a timestamp file with the UNIX timestamp of the last sync, bu
 If you have a repo that is not synced via the mirror-sync, but want to customize its look on the generated index.html. You can define a list of custom modules with the `CUSTOM_MODULES` variable, then define any of the following configurations.
 
 * repo
+* timestamp
+* dusum
 * section
 * repo_title
 * repo_icon
@@ -494,7 +496,7 @@ example_repo='/home/mirror/http/'
 example_section="official"
 example_repo_title="Test repo"
 example_repo_icon="terminal.png"
-example_repo_descriont="Test, this is a test."
+example_repo_description="Test, this is a test."
 
 example2_repo='/home/mirror/windows/'
 example2_repo_icon="windows.png"
@@ -526,7 +528,7 @@ A name for the global footer generation.
 MIRRORS="mirror_example"
 
 mirror_example_path="/home/mirror/mirror_docroot"
-mirror_example_name="My company"
+mirror_example_title="My company"
 mirror_example_logo="http://example.com/logo.png"
 mirror_example_description="A public mirror provided by this cool company."
 mirror_example_provider_site="http://www.example.com/"
@@ -537,11 +539,11 @@ mirror_example_provider_name="Company"
 You can define multiple sections for the index.html with `SECTIONS` variable, it defaults to `official unofficial`. You can then set a default section with `section_default`, which defaults to `unofficial`. A title is auto generated as `{SECTION} Mirrors`, which you can customize with a variable named `section_{SECTION}_title`.
 
 ## Templates
-Where templates are stored is configured by `template_dir` which defaults to `/usr/local/share/file-generator-templates`. Default files should be stored under the `default` sub directory, and any customizations to individual mirrors should be saved under a sub directory with that mirror's name. You can add icons/logos into these template directories as well.
+Where templates are stored is configured by `template_dir` which defaults to `/usr/local/share/mirror-file-generator/templates`. Default files should be stored under the `default` sub directory, and any customizations to individual mirrors should be saved under a sub directory with that mirror's name. You can add icons/logos into these template directories as well.
 
 Default templates:
 * header.html - The main index header.
-* secion.thml - Template for a secion.
+* section.html - Template for a section.
 * repo.html - The repo card template.
 * footer.html - The footer of the index.
 * footer.txt - Template for the global footer file.
@@ -549,28 +551,28 @@ Default templates:
 ## Configurations of general defaults.
 
 ### index_generate
-Rather or not to generate the index.html file.
+Whether or not to generate the index.html file.
 
 * 1 Enabled
-* 0 Disbaled
+* 0 Disabled
 
 ### index_file_name
 If your index file name is different, you can adjust here.
 
 ### footer_generate
-Rather or not to generate a footer file that can be configured as the mirror's global footer.
+Whether or not to generate a footer file that can be configured as the mirror's global footer.
 
 * 1 Enabled
-* 0 Disbaled
+* 0 Disabled
 
 ### footer_file_name
 Alternative file name for the footer file.
 
 ### dir_sizes_generate
-Rather or not to generate directory sizes file.
+Whether or not to generate directory sizes file.
 
 * 1 Enabled
-* 0 Disbaled
+* 0 Disabled
 
 ### dir_sizes_file_name
 Alternative file name for directory sizes file.
@@ -592,3 +594,12 @@ The default URL to pull icons from, defaults to [Dashboard Icons](https://github
 
 ### icons_default_img
 A default file to use if icon or logo defined either isn't defined or isn't accessible.
+
+### icons_local_repo
+Local path to a cloned copy of the dashboard-icons git repository. When this directory exists, the script serves icons from it instead of fetching them over HTTP, which avoids per-icon network requests. Defaults to `$HOME/dashboard-icons`.
+
+### icons_repo_url
+Git URL used to clone the dashboard-icons repository into `icons_local_repo` if it does not already exist. Set to an empty string to disable automatic cloning. Defaults to `https://github.com/walkxcode/dashboard-icons.git`.
+
+### icons_repo_refresh
+How often (in seconds) the local dashboard-icons clone is pulled for updates. Defaults to `604800` (7 days).
