@@ -10,7 +10,7 @@ PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:$HOME/.local/
 
 # Variables about this program.
 PROGRAM="mirror-file-generator"
-VERSION="20260602"
+VERSION="20260605"
 PIDPATH="/tmp"
 PIDFILE="${PIDPATH}/${PROGRAM}.pid"
 LOGFILE="/var/log/mirror-sync/$PROGRAM.log"
@@ -169,6 +169,7 @@ read_config() {
     eval section="\${${MODULE}_section:-}"
     eval repo_title="\${${MODULE}_repo_title:-}"
     eval icon="\${${MODULE}_repo_icon:-}"
+    eval icon_dark="\${${MODULE}_repo_icon_dark:-}"
     eval repo_description="\${${MODULE}_repo_description:-}"
     eval disable_size_calc="\${${MODULE}_disable_size_calc:-0}"
     eval repo_skip="\${${MODULE}_repo_skip:-0}"
@@ -312,6 +313,7 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
     title=$(html_encode "$title")
     export title
     eval logo="\${${mirror}_logo:-}"
+    eval logo_dark="\${${mirror}_logo_dark:-}"
     eval description="\${${mirror}_description:-}"
     export description
     eval provider_site="\${${mirror}_provider_site:-}"
@@ -329,6 +331,15 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
     # Grab the image and export the relative path for templates.
     logo_relative=$(html_encode "$(image_copy "${logo:-$icons_default_img}" logo)")
     export logo_relative
+
+    # If a dark logo is configured, copy it and export a <source> tag; otherwise export empty.
+    if [[ -n ${logo_dark:-} ]]; then
+        logo_dark_relative=$(html_encode "$(image_copy "$logo_dark" logo_dark)")
+        logo_dark_source="<source srcset=\"$logo_dark_relative\" media=\"(prefers-color-scheme: dark)\" />"
+    else
+        logo_dark_source=""
+    fi
+    export logo_dark_source
 
     # Default index file path.
     index_file_path="$path/$index_file_name"
@@ -480,9 +491,10 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
         # If we should skip this repo, continue to the next.
         if ((${repo_skip:-0})); then
             # Unset all vars for next repo.
-            unset repo_path repo_icon repo_title repo_size repo_size_kb \
+            unset repo_path repo_icon repo_icon_dark repo_icon_dark_source \
+                    repo_title repo_size repo_size_kb \
                     repo_sync_time repo_description timestamp dusum section \
-                    icon repo_skip disable_size_calc timestamp_file_stat
+                    icon icon_dark repo_skip disable_size_calc timestamp_file_stat
             continue
         fi
 
@@ -515,6 +527,15 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
         # Grab the icon and get its relative path.
         repo_icon=$(html_encode "$(image_copy "${icon:-$icons_default_img}" "$dir_name")")
         export repo_icon
+
+        # If a dark icon is configured, copy it and export a <source> tag; otherwise export empty.
+        if [[ -n ${icon_dark:-} ]]; then
+            repo_icon_dark=$(html_encode "$(image_copy "$icon_dark" "${dir_name}_dark")")
+            repo_icon_dark_source="<source srcset=\"$repo_icon_dark\" media=\"(prefers-color-scheme: dark)\" />"
+        else
+            repo_icon_dark_source=""
+        fi
+        export repo_icon_dark_source
 
         # If repo size is undefined, check if an unknown repo directory size exists.
         if [[ -z ${repo_size:-} ]] && ((${disable_size_calc:-0} == 0)); then
@@ -572,9 +593,10 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
         fi
 
         # Unset all vars for next repo.
-        unset repo_path repo_icon repo_title repo_size repo_size_kb \
+        unset repo_path repo_icon repo_icon_dark repo_icon_dark_source \
+                repo_title repo_size repo_size_kb \
                 repo_sync_time repo_description timestamp dusum section \
-                icon repo_skip disable_size_calc timestamp_file_stat
+                icon icon_dark repo_skip disable_size_calc timestamp_file_stat
     done
 
     # If the index should be generated, add each section and footer.

@@ -1,6 +1,9 @@
 <a href="${repo_path}">
     <div class="repo">
-        <img class="repo-icon" src="${repo_icon}" alt="${repo_title}" />
+        <picture>
+            ${repo_icon_dark_source}
+            <img class="repo-icon" src="${repo_icon}" alt="${repo_title}" />
+        </picture>
         <div class="repo-body">
             <div class="repo-title">${repo_title}</div>
             <div class="repo-size">Size: ${repo_size}</div>

@@ -87,11 +87,28 @@
                 width: auto;
             }
         }
+
+        @media (prefers-color-scheme: dark) {
+            body {
+                background-color: #1e1e1e;
+                color: #e0e0e0;
+            }
+            .repo-list a:link {
+                color: #e0e0e0;
+            }
+            .repo {
+                background-color: #2d2d2d;
+                color: #e0e0e0;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="header">
-        <img id="logo" src="${logo_relative}" alt="${title}" />
+        <picture>
+            ${logo_dark_source}
+            <img id="logo" src="${logo_relative}" alt="${title}" />
+        </picture>
         <div class="mirror-description">
             ${description}
         </div>

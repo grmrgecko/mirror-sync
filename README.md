@@ -460,6 +460,9 @@ A title for the repo to show instead of the directory name.
 ### repo_icon
 The repo icon, will default to tux if not defined. The icon can be defined as an http(s) link, file path, a file stored in the template directory, or png image name from [Dashboard Icons](https://github.com/walkxcode/dashboard-icons/tree/main/png). The script will automatically make a copy or download the icon to the image folder.
 
+### repo_icon_dark
+The dark-mode variant of the repo icon. Accepts the same sources as `repo_icon`. When defined, browsers that detect a dark OS theme will display this icon instead. If omitted, the light icon is used in all themes.
+
 ### repo_description
 A description to show at the bottom of the repo card.
 
@@ -481,6 +484,7 @@ If you have a repo that is not synced via the mirror-sync, but want to customize
 * section
 * repo_title
 * repo_icon
+* repo_icon_dark
 * repo_description
 * repo_skip
 * disable_size_calc
@@ -514,6 +518,9 @@ A title for the mirror, defaults to the name if unset.
 ### logo
 The logo, will default to tux if not defined. The logo can be defined as an http(s) link, file path, a file stored in the template directory, or png image name from [Dashboard Icons](https://github.com/walkxcode/dashboard-icons/tree/main/png). The script will automatically make a copy or download the icon to the image folder.
 
+### logo_dark
+The dark-mode variant of the mirror logo. Accepts the same sources as `logo`. When defined, browsers that detect a dark OS theme will display this logo instead. If omitted, the light logo is used in all themes.
+
 ### description
 A description to place below the logo that can be HTML formatted.
 
@@ -530,6 +537,7 @@ MIRRORS="mirror_example"
 mirror_example_path="/home/mirror/mirror_docroot"
 mirror_example_title="My company"
 mirror_example_logo="http://example.com/logo.png"
+mirror_example_logo_dark="http://example.com/logo-dark.png"
 mirror_example_description="A public mirror provided by this cool company."
 mirror_example_provider_site="http://www.example.com/"
 mirror_example_provider_name="Company"
@@ -547,6 +555,8 @@ Default templates:
 * repo.html - The repo card template.
 * footer.html - The footer of the index.
 * footer.txt - Template for the global footer file.
+
+The default `header.html` template includes a `@media (prefers-color-scheme: dark)` CSS block that automatically switches the page to a dark theme when the OS reports a dark preference. The logo and repo icon templates use the HTML `<picture>` element so that a dark variant image is served to dark-mode browsers when `logo_dark` or `repo_icon_dark` is configured.
 
 ## Configurations of general defaults.
 
