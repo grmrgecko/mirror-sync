@@ -29,9 +29,9 @@ dir_sizes_unknown_path="$HOME/dusum/unknown_dirs"
 dir_sizes_human_readable=1
 icons_dir_name="img"
 icons_local_repo="$HOME/dashboard-icons"
-icons_repo_url="https://github.com/walkxcode/dashboard-icons.git"
+icons_repo_url="https://github.com/homarr-labs/dashboard-icons.git"
 icons_repo_refresh=604800
-icons_default_source="https://raw.githubusercontent.com/walkxcode/dashboard-icons/main/png"
+icons_default_source="https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/png"
 icons_default_img="tux.png"
 
 # Prevent run as root.

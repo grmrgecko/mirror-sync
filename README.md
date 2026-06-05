@@ -458,7 +458,7 @@ What section to associate the repo with.
 A title for the repo to show instead of the directory name.
 
 ### repo_icon
-The repo icon, will default to tux if not defined. The icon can be defined as an http(s) link, file path, a file stored in the template directory, or png image name from [Dashboard Icons](https://github.com/walkxcode/dashboard-icons/tree/main/png). The script will automatically make a copy or download the icon to the image folder.
+The repo icon, will default to tux if not defined. The icon can be defined as an http(s) link, file path, a file stored in the template directory, or png image name from [Dashboard Icons](https://github.com/homarr-labs/dashboard-icons/tree/main/png). The script will automatically make a copy or download the icon to the image folder.
 
 ### repo_icon_dark
 The dark-mode variant of the repo icon. Accepts the same sources as `repo_icon`. When defined, browsers that detect a dark OS theme will display this icon instead. If omitted, the light icon is used in all themes.
@@ -516,7 +516,7 @@ The path to the mirror under which repos are stored.
 A title for the mirror, defaults to the name if unset.
 
 ### logo
-The logo, will default to tux if not defined. The logo can be defined as an http(s) link, file path, a file stored in the template directory, or png image name from [Dashboard Icons](https://github.com/walkxcode/dashboard-icons/tree/main/png). The script will automatically make a copy or download the icon to the image folder.
+The logo, will default to tux if not defined. The logo can be defined as an http(s) link, file path, a file stored in the template directory, or png image name from [Dashboard Icons](https://github.com/homarr-labs/dashboard-icons/tree/main/png). The script will automatically make a copy or download the icon to the image folder.
 
 ### logo_dark
 The dark-mode variant of the mirror logo. Accepts the same sources as `logo`. When defined, browsers that detect a dark OS theme will display this logo instead. If omitted, the light logo is used in all themes.
@@ -600,7 +600,7 @@ Should make human readable or output in kbytes.
 Where to store logos and icons.
 
 ### icons_default_source
-The default URL to pull icons from, defaults to [Dashboard Icons](https://github.com/walkxcode/dashboard-icons/tree/main/png).
+The default URL to pull icons from, defaults to [Dashboard Icons](https://github.com/homarr-labs/dashboard-icons/tree/main/png).
 
 ### icons_default_img
 A default file to use if icon or logo defined either isn't defined or isn't accessible.
@@ -609,7 +609,7 @@ A default file to use if icon or logo defined either isn't defined or isn't acce
 Local path to a cloned copy of the dashboard-icons git repository. When this directory exists, the script serves icons from it instead of fetching them over HTTP, which avoids per-icon network requests. Defaults to `$HOME/dashboard-icons`.
 
 ### icons_repo_url
-Git URL used to clone the dashboard-icons repository into `icons_local_repo` if it does not already exist. Set to an empty string to disable automatic cloning. Defaults to `https://github.com/walkxcode/dashboard-icons.git`.
+Git URL used to clone the dashboard-icons repository into `icons_local_repo` if it does not already exist. Set to an empty string to disable automatic cloning. Defaults to `https://github.com/homarr-labs/dashboard-icons.git`.
 
 ### icons_repo_refresh
 How often (in seconds) the local dashboard-icons clone is pulled for updates. Defaults to `604800` (7 days).
