@@ -367,12 +367,14 @@ build_trace_content() {
             total=$(( total + bytes ))
         done
     elif [[ -f $LOGFILE_STAGE1 ]]; then
-        for bytes in $(sed -Ene 's/(^|.* )sent ([0-9]+) bytes  received ([0-9]+) bytes.*/\3/p' "$LOGFILE_STAGE1"); do
+        all_bytes=$(sed -Ene 's/(^|.* )sent ([0-9]+) bytes  received ([0-9]+) bytes.*/\3/p' "$LOGFILE_STAGE1")
+        for bytes in $all_bytes; do
             total=$(( total + bytes ))
         done
     fi
     if [[ -f $LOGFILE_STAGE2 ]]; then
-        for bytes in $(sed -Ene 's/(^|.* )sent ([0-9]+) bytes  received ([0-9]+) bytes.*/\3/p' "$LOGFILE_STAGE2"); do
+        all_bytes=$(sed -Ene 's/(^|.* )sent ([0-9]+) bytes  received ([0-9]+) bytes.*/\3/p' "$LOGFILE_STAGE2")
+        for bytes in $all_bytes; do
             total=$(( total + bytes ))
         done
     fi
