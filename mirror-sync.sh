@@ -5,7 +5,7 @@ PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:$HOME/.local/
 
 # Variables for trace generation.
 PROGRAM="mirror-sync"
-VERSION="20260602"
+VERSION="20260616"
 TRACEHOST=$(hostname -f)
 mirror_hostname=$(hostname -f)
 DATE_STARTED=$(LC_ALL=POSIX LANG=POSIX date -u -R)
@@ -617,12 +617,58 @@ git_sync() {
     # Start the module.
     module_config "$1"
 
-    # Do a git pull within the repo folder to sync.
+    # Read git specific configuration.
+    eval source="\$${MODULE}_source"
+    eval bare="\$${MODULE}_bare"
+
+    # Normalize the bare flag to either "true" or empty.
+    case "${bare,,}" in
+        1|true|yes|bare) bare="true" ;;
+        *) bare="" ;;
+    esac
+
+    # If the destination does not yet contain a git repository, clone it from
+    # the configured source. Bare repositories are cloned with --mirror so the
+    # configured fetch refspec mirrors all refs from upstream.
+    if [[ ! -e "${repo:?}/.git" ]] && [[ ! -e "${repo:?}/HEAD" ]]; then
+        if [[ ! $source ]]; then
+            echo "No git repository at '${repo:?}' and no source defined to clone from."
+            exit 1
+        fi
+        echo "Cloning '${source}' into '${repo:?}'."
+        if [[ $bare ]]; then
+            eval git clone --mirror ${options:+$options} "'${source}'" "'${repo:?}'"
+        else
+            eval git clone ${options:+$options} "'${source}'" "'${repo:?}'"
+        fi
+        RT=$?
+        if (( RT == 0 )); then
+            post_successful_sync
+        else
+            post_failed_sync
+        fi
+        log_end_header
+        return
+    fi
+
+    # Move into the repo folder to sync.
     if ! cd "${repo:?}"; then
         echo "Failed to access '${repo:?}' git repository."
         exit 1
     fi
-    eval git pull ${options:+$options}
+
+    # Determine whether the repository is bare. Honor an explicit configuration
+    # if set, otherwise auto-detect. Bare repositories have no working tree, so a
+    # `git pull` is not possible; instead use `git remote update` which honors the
+    # configured fetch refspec (e.g. a mirror clone created with --mirror).
+    if [[ ! $bare ]] && [[ $(git rev-parse --is-bare-repository 2>/dev/null) == "true" ]]; then
+        bare="true"
+    fi
+    if [[ $bare ]]; then
+        eval git remote update --prune ${options:+$options}
+    else
+        eval git pull ${options:+$options}
+    fi
     RT=$?
     if (( RT == 0 )); then
         post_successful_sync

@@ -111,15 +111,35 @@ Each repo has at bare minimum the following configurations:
 - dusum - Path to a file to store disk usage summary results of the repository directory.
 
 ### git
-Synchronizes a git repository via git pull. To use this method, you need to have the git package installed.
+Synchronizes a git repository. To use this method, you need to have the git package installed.
+
+If the destination (`repo`) does not yet contain a git repository, it is cloned from the configured `source`. Otherwise it is updated in place. Bare repositories have no working tree, so they cannot be updated with `git pull`; instead the script clones them with `git clone --mirror` and updates them with `git remote update --prune`, which honors the repository's configured fetch refspec.
+
+Whether a repository is bare can be set explicitly with the `bare` configuration, otherwise existing repositories are auto-detected.
+
+#### source
+The git URL to clone the repository from. Required when the destination does not already contain a git repository.
+
+#### bare
+Set to `true` to treat the repository as bare. When cloning, this clones with `git clone --mirror`. When updating, this forces use of `git remote update --prune`. If unset, existing repositories are auto-detected.
 
 #### options
-Extra options appended to `git pull`.
+Extra options appended to the git command (`git clone` when cloning, `git pull` when updating a working-tree repository, or `git remote update --prune` when updating a bare repository).
 
 #### Example
 ```bash
 example_sync_method="git"
+example_source="https://github.com/example/example.git"
 example_repo="/home/mirror/http/example"
+example_timestamp="/home/mirror/timestamp/example"
+```
+
+#### Bare repository example
+```bash
+example_sync_method="git"
+example_source="https://github.com/example/example.git"
+example_repo="/home/mirror/git/example.git"
+example_bare="true"
 example_timestamp="/home/mirror/timestamp/example"
 ```
 
