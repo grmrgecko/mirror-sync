@@ -5,7 +5,7 @@ PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:$HOME/.local/
 
 # Variables for trace generation.
 PROGRAM="mirror-sync"
-VERSION="20260616"
+VERSION="20260721"
 TRACEHOST=$(hostname -f)
 mirror_hostname=$(hostname -f)
 DATE_STARTED=$(LC_ALL=POSIX LANG=POSIX date -u -R)
@@ -60,6 +60,38 @@ else
     echo "No configuration file defined, please setup a proper configuration file."
     exit 1
 fi
+
+# Files to remove if a sync is interrupted (Archive-Update-in-Progress markers,
+# temporary stage logs, ...). The sync functions append to this list as they
+# create such files so that a Ctrl-C does not leave stale state behind.
+cleanup_files=()
+
+# Handle Ctrl-C (SIGINT) and termination (SIGTERM). When run from a terminal
+# the signal is delivered to the whole process group, so the rsync/aws/git/...
+# process that is currently syncing receives it and stops on its own. This
+# handler then cleans up after it: it removes the in-progress markers, temporary
+# logs and the lock file, and exits without counting the interruption as a sync
+# failure (so it does not inflate the error count or trigger error emails).
+handle_interrupt() {
+    # Ignore any further interrupts while we clean up.
+    trap '' INT TERM
+
+    echo
+    echo "Interrupt received, stopping sync and cleaning up..."
+
+    # Remove any files registered for cleanup by the running module.
+    local _f
+    for _f in "${cleanup_files[@]}"; do
+        [[ $_f ]] && rm -f "$_f"
+    done
+
+    # Remove the pid lock file for this module so a later run is not blocked.
+    [[ $PIDFILE ]] && rm -f "$PIDFILE"
+
+    echo "Sync interrupted."
+    exit 130
+}
+trap handle_interrupt INT TERM
 
 # Print the help for this command.
 print_help() {
@@ -959,6 +991,8 @@ rsync_sync() {
     touch "$mirror_update_file"
     LOGFILE_STAGE1="${LOGFILE}.stage1"
     echo -n > "$LOGFILE_STAGE1"
+    # Register for cleanup so an interrupt does not leave these behind.
+    cleanup_files+=("$mirror_update_file" "$LOGFILE_STAGE1")
 
     # Run the rsync. Using eval here so extra_args expands and is used as arguments.
     stage1_started=$(date +%s)
@@ -1015,6 +1049,7 @@ rsync_sync() {
         extra_args="${options_stage2:-}"
         LOGFILE_STAGE2="${LOGFILE}.stage2"
         echo -n > "$LOGFILE_STAGE2"
+        cleanup_files+=("$LOGFILE_STAGE2")
 
         echo
         echo "Running rsync stage 2:"
@@ -1143,10 +1178,14 @@ EOF
     # Create archive update file.
     docroot=$repo
     for module in $modules; do
-        touch "$docroot$(module_dir "$module")/Archive-Update-in-Progress-${mirror_hostname:?}"
+        _auip="$docroot$(module_dir "$module")/Archive-Update-in-Progress-${mirror_hostname:?}"
+        touch "$_auip"
+        # Register for cleanup so an interrupt does not leave these behind.
+        cleanup_files+=("$_auip")
     done
     LOGFILE_SYNC="${LOGFILE}.sync"
     echo -n > "$LOGFILE_SYNC"
+    cleanup_files+=("$LOGFILE_SYNC")
 
     # Add arguments from configurations.
     extra_args="${options:-}"
