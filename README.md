@@ -109,6 +109,7 @@ Each repo has at bare minimum the following configurations:
 - repo - The destination directory of the repository.
 - timestamp - Path to a file to store the last successful sync unix time stamp. Can be used by a monitoring system to confirm each repo is syncing successfully.
 - dusum - Path to a file to store disk usage summary results of the repository directory.
+- post_successful_sync_hook - A hook to run at the very end of any sync method, after all cleanup has completed and the sync has been confirmed successful. Unlike the rsync/qfm `post_hook`, this runs after trace files, log cleanup, and mirror reporting are finished, and it is available for every sync method.
 
 ### git
 Synchronizes a git repository. To use this method, you need to have the git package installed.

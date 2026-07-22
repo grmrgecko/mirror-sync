@@ -604,6 +604,17 @@ post_successful_sync() {
     fi
 }
 
+# Run the configured post-successful-sync hook, if any. This is called at the
+# very end of each sync method, after all cleanup has finished and the sync has
+# been confirmed successful (a failed sync exits earlier via post_failed_sync).
+run_post_successful_sync_hook() {
+    eval post_successful_sync_hook="\$${MODULE}_post_successful_sync_hook"
+    if [[ $post_successful_sync_hook ]]; then
+        echo "Executing post-successful-sync hook:"
+        eval "$post_successful_sync_hook"
+    fi
+}
+
 # On failed sync, count failure and exit.
 post_failed_sync() {
     echo "Sync failed."
@@ -718,6 +729,7 @@ git_sync() {
         else
             post_failed_sync
         fi
+        run_post_successful_sync_hook
         log_end_header
         return
     fi
@@ -755,6 +767,7 @@ git_sync() {
         post_failed_sync
     fi
 
+    run_post_successful_sync_hook
     log_end_header
 }
 
@@ -791,6 +804,7 @@ aws_sync() {
         post_failed_sync
     fi
 
+    run_post_successful_sync_hook
     log_end_header
 }
 
@@ -819,6 +833,7 @@ s3cmd_sync() {
         post_failed_sync
     fi
 
+    run_post_successful_sync_hook
     log_end_header
 }
 
@@ -849,6 +864,7 @@ s5cmd_sync() {
         post_failed_sync
     fi
 
+    run_post_successful_sync_hook
     log_end_header
 }
 
@@ -867,6 +883,7 @@ ftp_sync() {
         post_failed_sync
     fi
 
+    run_post_successful_sync_hook
     log_end_header
 }
 
@@ -906,6 +923,7 @@ wget_sync() {
         exit "$RT"
     fi
 
+    run_post_successful_sync_hook
     log_end_header
 }
 
@@ -1150,6 +1168,7 @@ rsync_sync() {
         /bin/report_mirror -c "${report_mirror:?}"
     fi
 
+    run_post_successful_sync_hook
     log_end_header
 }
 
@@ -1280,6 +1299,7 @@ EOF
         /bin/report_mirror -c "${report_mirror:?}"
     fi
 
+    run_post_successful_sync_hook
     log_end_header
 }
 
