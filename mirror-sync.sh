@@ -5,7 +5,7 @@ PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:$HOME/.local/
 
 # Variables for trace generation.
 PROGRAM="mirror-sync"
-VERSION="20260721"
+VERSION="20260722"
 TRACEHOST=$(hostname -f)
 mirror_hostname=$(hostname -f)
 DATE_STARTED=$(LC_ALL=POSIX LANG=POSIX date -u -R)
@@ -646,6 +646,29 @@ module_config() {
     log_start_header
 }
 
+# Maintenance to run after a successful sync (or clone) of a bare repository.
+# Bare repositories are typically served to clients over "dumb" HTTP (a plain
+# file server), which requires the info files kept up to date and, optionally,
+# the upstream URL scrubbed so it cannot be read from the served files.
+git_bare_post_sync() {
+    # When hiding the remote, strip anything that records the upstream URL so it
+    # cannot be probed over dumb HTTP. `config` holds it under [remote ...] and
+    # `git fetch` writes it into FETCH_HEAD on every run.
+    if [[ $hide_remote ]]; then
+        local _remote
+        for _remote in $(git -C "${repo:?}" remote 2>/dev/null); do
+            git -C "${repo:?}" remote remove "$_remote"
+        done
+        rm -f "${repo:?}/FETCH_HEAD"
+    fi
+
+    # Regenerate the dumb-HTTP info files (info/refs and objects/info/packs).
+    # A mirror fetch never fires the post-update hook (that only runs on push),
+    # so this has to run explicitly after each sync. It is cheap, so rather than
+    # try to detect whether it is needed we simply run it every time.
+    git -C "${repo:?}" update-server-info
+}
+
 # Sync git based mirrors.
 git_sync() {
     # Start the module.
@@ -654,12 +677,25 @@ git_sync() {
     # Read git specific configuration.
     eval source="\$${MODULE}_source"
     eval bare="\$${MODULE}_bare"
+    eval hide_remote="\$${MODULE}_hide_remote"
 
     # Normalize the bare flag to either "true" or empty.
     case "${bare,,}" in
         1|true|yes|bare) bare="true" ;;
         *) bare="" ;;
     esac
+
+    # Normalize the hide_remote flag to either "true" or empty. Hiding the remote
+    # requires a configured source, since without a stored remote the URL to
+    # fetch from must come from the configuration on every sync.
+    case "${hide_remote,,}" in
+        1|true|yes) hide_remote="true" ;;
+        *) hide_remote="" ;;
+    esac
+    if [[ $hide_remote ]] && [[ ! $source ]]; then
+        echo "hide_remote requires a source to be configured."
+        exit 1
+    fi
 
     # If the destination does not yet contain a git repository, clone it from
     # the configured source. Bare repositories are cloned with --mirror so the
@@ -677,6 +713,7 @@ git_sync() {
         fi
         RT=$?
         if (( RT == 0 )); then
+            [[ $bare ]] && git_bare_post_sync
             post_successful_sync
         else
             post_failed_sync
@@ -693,18 +730,26 @@ git_sync() {
 
     # Determine whether the repository is bare. Honor an explicit configuration
     # if set, otherwise auto-detect. Bare repositories have no working tree, so a
-    # `git pull` is not possible; instead use `git remote update` which honors the
-    # configured fetch refspec (e.g. a mirror clone created with --mirror).
+    # `git pull` is not possible; instead update by fetching the configured
+    # refspec.
     if [[ ! $bare ]] && [[ $(git rev-parse --is-bare-repository 2>/dev/null) == "true" ]]; then
         bare="true"
     fi
     if [[ $bare ]]; then
-        eval git remote update --prune ${options:+$options}
+        # When hiding the remote there is no stored remote to update, so fetch
+        # directly from the source with a mirror refspec. Otherwise honor the
+        # remote's configured fetch refspec (e.g. from a --mirror clone).
+        if [[ $hide_remote ]]; then
+            eval git fetch --prune ${options:+$options} "'${source}'" "'+refs/*:refs/*'"
+        else
+            eval git remote update --prune ${options:+$options}
+        fi
     else
         eval git pull ${options:+$options}
     fi
     RT=$?
     if (( RT == 0 )); then
+        [[ $bare ]] && git_bare_post_sync
         post_successful_sync
     else
         post_failed_sync

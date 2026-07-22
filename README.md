@@ -117,14 +117,19 @@ If the destination (`repo`) does not yet contain a git repository, it is cloned 
 
 Whether a repository is bare can be set explicitly with the `bare` configuration, otherwise existing repositories are auto-detected.
 
+Bare repositories are usually served to clients over "dumb" HTTP (a plain file server). After each successful sync (and after the initial clone) the script runs `git update-server-info` so the `info/refs` and `objects/info/packs` files clients need stay up to date. This is run every time rather than detected, as it is cheap; the packaged `post-update` hook cannot be relied on because it only fires on push, never on the fetch a mirror performs.
+
 #### source
 The git URL to clone the repository from. Required when the destination does not already contain a git repository.
 
 #### bare
-Set to `true` to treat the repository as bare. When cloning, this clones with `git clone --mirror`. When updating, this forces use of `git remote update --prune`. If unset, existing repositories are auto-detected.
+Set to `true` to treat the repository as bare. When cloning, this clones with `git clone --mirror`. When updating, this forces use of `git remote update --prune` (or a direct fetch when `hide_remote` is set). If unset, existing repositories are auto-detected.
+
+#### hide_remote
+Set to `true` (requires `bare` and `source`) to keep the upstream URL out of the served repository so clients cannot probe the dumb-HTTP files to discover where the mirror pulls from. When enabled, the stored remote is removed from the repository's `config` and the `FETCH_HEAD` file (which records the URL on every fetch) is deleted after each sync. Because there is no stored remote to update, the sync fetches directly from `source` with a mirror refspec (`+refs/*:refs/*`) on each run.
 
 #### options
-Extra options appended to the git command (`git clone` when cloning, `git pull` when updating a working-tree repository, or `git remote update --prune` when updating a bare repository).
+Extra options appended to the git command (`git clone` when cloning, `git pull` when updating a working-tree repository, or `git remote update --prune` / `git fetch` when updating a bare repository).
 
 #### Example
 ```bash
@@ -141,6 +146,8 @@ example_source="https://github.com/example/example.git"
 example_repo="/home/mirror/git/example.git"
 example_bare="true"
 example_timestamp="/home/mirror/timestamp/example"
+# Optional: keep the upstream URL out of the served files.
+example_hide_remote="true"
 ```
 
 ### aws
