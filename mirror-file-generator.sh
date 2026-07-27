@@ -40,16 +40,32 @@ if (( EUID == 0 )); then
   exit 1
 fi
 
-# Load the required configuration file or quit.
-if [[ -f /etc/mirror-sync.conf ]]; then
+# Load the required configuration file or quit. The default is where a system
+# installation keeps it; MIRROR_SYNC_CONF names another one, so the script can
+# be pointed at a configuration of its own for testing or for a mirror run out
+# of a home directory.
+CONFIG_FILE="${MIRROR_SYNC_CONF:-/etc/mirror-sync.conf}"
+if [[ -f $CONFIG_FILE ]]; then
     # shellcheck source=/dev/null
-    source /etc/mirror-sync.conf
+    source "$CONFIG_FILE"
 else
-    echo "No configuration file defined, please setup a proper configuration file."
+    echo "No configuration file at '${CONFIG_FILE}', please setup a proper configuration file."
     exit 1
 fi
 
-# Print the help for this command.
+# Repos are collected into one list per section and only the sections named in
+# SECTIONS are assembled into the index, so a default that is not one of them
+# would drop every repo that does not name a section of its own.
+# We are purposely adding quotes to match the space.
+# shellcheck disable=SC2076
+if ((index_generate)) && [[ ! " $SECTIONS " =~ " $section_default " ]]; then
+    echo "section_default '${section_default}' is not one of SECTIONS (${SECTIONS})."
+    exit 1
+fi
+
+# Print the help for this command. An exit status may be given so that printing
+# help because of a mistake (an unknown mirror) exits non-zero, letting cron or
+# a calling script tell a misconfiguration apart from a run that asked for help.
 print_help() {
     echo "Mirror File Generator (${VERSION})"
     echo
@@ -62,7 +78,7 @@ print_help() {
     done
     echo
     echo "Note: Defaults to generating files for all mirrors."
-    exit
+    exit "${1:-0}"
 }
 
 # Output message in log format and to logger.
@@ -111,6 +127,7 @@ image_copy() {
     extension="${extension%\?*}"
     local save_path="$path/$icons_dir_name/$file_name.$extension"
     local http_code
+    local t_file
 
     # Determine if the saved file needs to be updated.
     local needs_update=0
@@ -126,6 +143,14 @@ image_copy() {
         if (( $(stat --format='%Y' "$file") != $(stat --format='%Y' "$save_path") )); then
             needs_update=1
         fi
+    else
+        # A name that resolves to a template file is copied the same way a local
+        # file is, so it goes stale the same way and is compared by mtime too.
+        t_file=$(template_file "$file")
+        if [[ -f $t_file ]] \
+            && (( $(stat --format='%Y' "$t_file") != $(stat --format='%Y' "$save_path") )); then
+            needs_update=1
+        fi
     fi
 
     if (( needs_update )); then
@@ -134,11 +159,15 @@ image_copy() {
             # If failure, and is not the default image, attempt to grab the default file.
             # --fail suppresses writing the response body on HTTP errors; rm -f cleans up
             # any partial file so the fallback recursion isn't blocked by the needs_update check.
+            # The fallback must be skipped when we are already fetching the default
+            # image, otherwise a download failure recurses into itself forever.
             if ! http_code=$(curl -sf --write-out "%{http_code}" -o "$save_path" "$file") \
-                || ( ((http_code!=200)) && [[ "$file" != "$icons_default_img" ]] \
-                && [[ "$file" != "$icons_default_source/$icons_default_img" ]] ); then
+                || ((http_code!=200)); then
                 rm -f "$save_path"
-                image_copy "$icons_default_img" "$file_name"
+                if [[ "$file" != "$icons_default_img" ]] \
+                    && [[ "$file" != "$icons_default_source/$icons_default_img" ]]; then
+                    image_copy "$icons_default_img" "$file_name"
+                fi
                 return
             fi
         # If the file exists, copy it preserving mtime.
@@ -146,7 +175,6 @@ image_copy() {
             cp -p "$file" "$save_path"
         else
             # Check to see if a template file exists with the file name.
-            local t_file
             t_file=$(template_file "$file")
             # If the file exists, copy it preserving mtime.
             if [[ -f $t_file ]]; then
@@ -155,11 +183,47 @@ image_copy() {
                 # If nothing else exists, try grabbing from the default source.
                 image_copy "$icons_default_source/$file" "$file_name"
                 return
+            else
+                # Nothing produced an image. Fall back to the default one, just
+                # as a failed download does, so a name that the icon source does
+                # not carry renders as the default rather than as a broken
+                # image. This matters most when the icon source is the local
+                # dashboard-icons clone, where a missing name is simply an
+                # absent file rather than a failed request. Skipped when this
+                # call is already placing the default, as there would then be
+                # nothing left to fall back to.
+                if [[ "$file" != "$icons_default_img" ]] \
+                    && [[ "$file" != "$icons_default_source/$icons_default_img" ]]; then
+                    image_copy "$icons_default_img" "$file_name"
+                    return
+                fi
+                # Warn on stderr, as stdout is this function's return value.
+                log "Warning: no image found for '$file_name', tried '$file'" >&2
+                return
             fi
         fi
     fi
     # Return the save relative path.
     echo "$icons_dir_name/$file_name.$extension"
+}
+
+# Pull the size of a directory out of a du summary file. The path is matched
+# exactly (with any trailing slashes removed) rather than with grep, as a
+# substring match would also hit sibling repos sharing a prefix (for example
+# "almalinux" matching "almalinux-stage") and return multiple sizes.
+#
+# The path is taken as everything after the size column rather than as the
+# second field, since a repo path containing a space spans several fields and
+# would otherwise be compared as its first word alone and never match.
+dusum_size() {
+    awk -v dir="$1" '
+        {
+            p = $0
+            sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "", p)
+            sub(/\/+$/, "", p)
+        }
+        p == dir { print $1; exit }
+    ' "$2"
 }
 
 # Read the module's configuration.
@@ -190,7 +254,7 @@ while (( $# > 0 )); do
         ;;
         # If help is requested, print it.
         -h|h|help|--help)
-            print_help "$@"
+            print_help
         ;;
         # Print version.
         -v|--version)
@@ -220,7 +284,7 @@ while (( $# > 0 )); do
             if [[ -z $foundMirror ]]; then
                 echo "Unknown mirror '$mirror'"
                 echo
-                print_help "$@"
+                print_help 1
             fi
 
             # Add mirror to list.
@@ -234,6 +298,7 @@ while (( $# > 0 )); do
 done
 
 # Redirect stdout to both stdout and log file.
+mkdir -p "$(dirname "$LOGFILE")"
 exec 1> >(tee -a "$LOGFILE")
 # Redirect errors to stdout so they also are logged.
 exec 2>&1
@@ -370,6 +435,10 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
     # Keep record of total kbytes of repo sizes.
     totalKBytes=0
 
+    # Count the repos written into the index, so an index that ended up with no
+    # repos at all is not published over a good one.
+    repos_added=0
+
     # For each directory under the mirror, generate repo data.
     for dir in "$path"/*; do
         # Some repos may be built with symbolic links, so get the real path.
@@ -448,7 +517,7 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
 
                 # If a directory usage summary exists and we're not skipping, parse the size.
                 if [[ -n $dusum ]] && [[ -f $dusum ]] && ((${repo_skip:-0} == 0)); then
-                    repo_size_kb=$(grep "$real_dir" "$dusum" | awk '{print $1}')
+                    repo_size_kb=$(dusum_size "$real_dir" "$dusum")
                     if [[ -n $repo_size_kb ]]; then
                         totalKBytes=$((totalKBytes+repo_size_kb))
                         repo_size=$(echo "$repo_size_kb*1024" | bc | numfmt --to=iec)
@@ -480,7 +549,7 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
                 repo_sync_time=$(date -d "@$(cat "$timestamp")" '+%c')
             fi
             if [[ -n ${dusum:-} ]] && [[ -f $dusum ]] && ((${repo_skip:-0} == 0)); then
-                repo_size_kb=$(grep "$real_dir" "$dusum" | awk '{print $1}')
+                repo_size_kb=$(dusum_size "$real_dir" "$dusum")
                 if [[ -n $repo_size_kb ]]; then
                     totalKBytes=$((totalKBytes+repo_size_kb))
                     repo_size=$(echo "$repo_size_kb*1024" | bc | numfmt --to=iec)
@@ -541,10 +610,18 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
         if [[ -z ${repo_size:-} ]] && ((${disable_size_calc:-0} == 0)); then
             unknown_path="$dir_sizes_unknown_path/$mirror/$dir_name"
 
-            # If we should update the directory usage sizes, do so.
-            # shellcheck disable=SC2076
-            if ((update_unknown_dir_size)) \
-                && [[ ! " ${repo_sizes_updated[*]} " =~ " ${real_dir} " ]]; then
+            # If we should update the directory usage sizes, do so. The
+            # already-updated check compares exact strings rather than a
+            # regex, as a path containing regex metacharacters (such as dots)
+            # could otherwise match a different repo and skip this update.
+            already_updated=0
+            for updated_repo in "${repo_sizes_updated[@]}"; do
+                if [[ $updated_repo == "$real_dir" ]]; then
+                    already_updated=1
+                    break
+                fi
+            done
+            if ((update_unknown_dir_size)) && ((already_updated == 0)); then
                 # Add to list of repos with updated sizes.
                 repo_sizes_updated+=("$real_dir")
 
@@ -565,7 +642,7 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
 
             # If the unknown repo size path exists, grab it.
             if [[ -f $unknown_path ]]; then
-                repo_size_kb=$(grep "$real_dir" "$unknown_path" | awk '{print $1}')
+                repo_size_kb=$(dusum_size "$real_dir" "$unknown_path")
                 if [[ -n $repo_size_kb ]]; then
                     totalKBytes=$((totalKBytes+repo_size_kb))
                     repo_size=$(echo "$repo_size_kb*1024" | bc | numfmt --to=iec)
@@ -577,10 +654,21 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
         repo_size=$(html_encode "${repo_size:-Unknown}")
         export repo_size
 
-        # If we're generating the index.html, do so.
+        # If we're generating the index.html, do so. A section that is not one
+        # of SECTIONS has no list to append to, so the repo would be written to
+        # a file that is never assembled into the index and is left behind in
+        # the mirror root. Report it and fall back to the default section, so a
+        # typo costs the repo its placement rather than its listing.
         if ((index_generate)); then
             section=${section:-$section_default}
+            # We are purposely adding quotes to match the space.
+            # shellcheck disable=SC2076
+            if [[ ! " $SECTIONS " =~ " $section " ]]; then
+                log "Unknown section '$section' for $dir_name, using '$section_default'"
+                section=$section_default
+            fi
             envsubst < "$(template_file repo.html)" >> "$index_file_temp.$section"
+            repos_added=$((repos_added+1))
         fi
 
         # If we're generating the repo size file, add to it.
@@ -610,8 +698,11 @@ for ((i=0; i<${#selected_mirrors[@]}; i++)); do
         # Add footer subsituting environment variables.
         envsubst < "$(template_file footer.html)" >> "$index_file_temp"
 
-        # Verify the index temp contains a repo before moving into place.
-        if grep -q "Last Sync:" "$index_file_temp"; then
+        # Verify the index temp contains a repo before moving into place. The
+        # count of repos written is used rather than grepping the built file for
+        # text from the stock template, so that a customized repo.html does not
+        # stop the index from ever being published.
+        if ((repos_added > 0)); then
             [[ -f $index_file_path ]] && rm -f "$index_file_path"
             mv "$index_file_temp" "$index_file_path"
         else
